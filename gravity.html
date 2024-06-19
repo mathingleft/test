@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>gravity</title>
+    <style>
+        div {
+            display: inline-block
+        }
+    </style>
+</head>
+<body>
+    <canvas id="Canvas" style="border: 2px solid" onclick="moveCircle(event)"></canvas>
+    <p id="distance"></p>
+    <p id="gravitationalMagnitude"></p>
+    <div>
+        <p>Earth ----------------------------------------</p>
+        <p id="earthPositionX"></p>
+        <p id="earthPositionY"></p>
+        <p id="earthVelocityX"></p>
+        <p id="earthVelocityY"></p>
+        <p id="earthMass"></p>
+    </div>
+    <div>
+        <p>Sun ----------------------------------------</p>
+        <p id="sunPositionX"></p>
+        <p id="sunPositionY"></p>
+        <p id="sunVelocityX"></p>
+        <p id="sunVelocityY"></p>
+        <p id="sunMass"></p>
+    </div>
+    <button id="select_circle" onclick="switchSelectedCircle()">Selected Planet: earth</button>
+    <button id="keep_in_bounds" onclick="switchKeepInBounds()">Keep In Bounds: true</button>
+    <script>
+        // Canvas --------------------
+        var canvas = document.getElementById("Canvas");
+        var c = canvas.getContext("2d"); // Drawing Context = context = c
+
+        canvas.width = window.innerWidth - 20;
+        canvas.height = window.innerHeight - 325;
+
+        // Simulation <-> Canvas --------------------
+        var minSimLength = 400 * Math.pow(10, 9);
+        var cScale = Math.min(canvas.width, canvas.height) / minSimLength; // scales simulation to canvas
+        var simWidth = canvas.width / cScale;
+        var simHeight = canvas.height / cScale;
+
+        function cX(xPosition) { // input: simulation X-position     output: canvas X-position
+            return xPosition * cScale;
+        }
+        function cY(yPosition) { // input: simulation Y-position     output: canvas Y-position
+            return canvas.height - (yPosition * cScale);
+        }
+
+
+        function sX(xPosition) { // input: canvas X-position     output: simulation X-position
+            return xPosition / cScale;
+        }
+        function sY(yPosition) { // input: canvas Y-position     output: simulation Y-position
+            return (yPosition - canvas.height) / (-1.0 * cScale);
+        }
+
+        // Variables --------------------
+        class Ball {
+            constructor(radius, color, xPosition, yPosition, xVelocity, yVelocity) {
+                this.radius = radius;
+                this.color = color;
+                this.position = {
+                    x: xPosition,
+                    y: yPosition
+                }
+                this.velocity = {
+                    x: xVelocity,
+                    y: yVelocity
+                }
+            }
+        }
+        class Planet extends Ball {
+            constructor(radius, color, xPosition, yPosition, xVelocity, yVelocity, mass) {
+                super(radius, color, xPosition, yPosition, xVelocity, yVelocity);
+                this.mass = mass;
+            }
+
+            updatePosition() { // will update 60 times per second
+                this.position.x += this.velocity.x * timeStep;
+                this.position.y += this.velocity.y * timeStep;
+
+                if (keepInBounds) {
+                    this.keepInBounds();
+                }
+            }
+
+            keepInBounds() {
+                if (this.position.x < 0) {
+                    this.position.x = 0;
+                } else if (this.position.x > simWidth) {
+                    this.position.x = simWidth;
+                }
+                if (this.position.y < 0) {
+                    this.position.y = 0;
+                } else if (this.position.y > simHeight) {
+                    this.position.y = simHeight
+                }
+            }
+
+            addForce(force) { // will update 60 times per second
+                this.velocity.x += (force.x / this.mass) * timeStep;
+                this.velocity.y += (force.y / this.mass) * timeStep;
+            }
+        }
+
+        class Line { // i dont know why this exists
+            constructor(width, color) {
+                this.width = width;
+                this.color = color;
+            }
+        }
+        class Vector extends Line { // this will be the arrow thingy drawn                  this also literally isn't a vector, but im too lazy
+            constructor(width, color, xPosition, yPosition, xVelocity, yVelocity) {
+                super(width, color);
+                this.startPosition = {
+                    x: xPosition,
+                    y: yPosition
+                }
+                this.endPosition = {
+                    x: xPosition + xVelocity * 10 * timeStep * 60,
+                    y: yPosition + yVelocity * 10 * timeStep * 60
+                }
+            }
+
+            updatePositions(position, velocity) {
+                this.startPosition.x = position.x;
+                this.startPosition.y = position.y;
+
+                let days = 10;
+                let fps = 60;
+
+                this.endPosition.x = position.x + velocity.x * days * timeStep/10 * fps;
+                this.endPosition.y = position.y + velocity.y * days * timeStep/10 * fps;
+            }
+        }
+
+        var kilometer = Math.pow(10, 3);
+        var millionKilometer = Math.pow(10, 9);
+
+        var middleXCCoordinate = (canvas.width / cScale) * 0.5
+        var middleYCCoordinate = (canvas.height / cScale) * 0.5
+
+        const earth = new Planet(6378.0 * kilometer, "#FF0000", middleXCCoordinate - 152/2 * millionKilometer, middleYCCoordinate, 0, 29.3 * kilometer, 5.972 * Math.pow(10, 24));
+        const sun = new Planet(695700.0 * kilometer, "#0000FF", middleXCCoordinate + 152/2 * millionKilometer, middleYCCoordinate, 0, 0.0, 1.989 * Math.pow(10, 30));
+        const earthVector = new Vector(500 * kilometer, "#FFFF00", null, null, null, null);
+        const sunVector = new Vector(500 * kilometer, "#00FFFF", null, null, null, null);
+
+        var timeStep = 1440 * 10; // 1 real second = 10 simulation day
+
+        var selectedCircle = "earth";
+        var keepInBounds = true;
+
+        // Draw --------------------
+        function draw() {
+            c.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawCircle(earth);
+            drawVector(earthVector);
+
+            drawCircle(sun);
+            drawVector(sunVector);
+        }
+
+        function drawCircle(circle) {
+            // exaggerates the size or else it's too small
+            c.fillStyle = circle.color;
+            c.beginPath();
+            c.arc(
+                cX(circle.position.x), cY(circle.position.y), cScale * circle.radius * 100, 0.0, 2.0 * Math.PI
+            );
+            c.fill();
+        }
+
+        function drawLine(position1, position2) { // i dont know why this exists
+            c.fillStyle = line.color;
+            c.lineWidth = line.width * cScale;
+            c.beginPath();
+            c.moveTo(cX(position1.x), cY(position1.y));
+            c.lineTo(cX(position2.x), cY(position2.y));
+            c.stroke();
+        }
+
+        function drawVector(vector) {
+            // exaggerates the size or else it's too small
+            c.fillStyle = vector.color;
+            c.lineWidth = vector.width * cScale * 1000;
+            c.beginPath();
+            c.moveTo(cX(vector.startPosition.x), cY(vector.startPosition.y));
+            c.lineTo(cX(vector.endPosition.x), cY(vector.endPosition.y));
+            c.stroke();
+        }
+
+        // Simulate --------------------
+        function simulate() {
+            earth.updatePosition();
+            earthVector.updatePositions(earth.position, earth.velocity);
+
+            sunVector.updatePositions(sun.position, sun.velocity);
+            sun.updatePosition();
+
+            var xDistance = earth.position.x - sun.position.x;
+            var yDistance = earth.position.y - sun.position.y;
+            var distance = Math.sqrt(Math.pow(xDistance, 2) + Math.pow(yDistance, 2));
+            var gravitationalConstant = 6.67 * Math.pow(10, -11);
+
+            var gravityForceMagnitude = gravitationalConstant * earth.mass * sun.mass / Math.pow(distance, 2); // force in N or kilograms * meter/second^2
+
+            var gravityForce1 = {
+                x: -1 * (xDistance / distance) * gravityForceMagnitude, // xDistance is earth's position relative to sun's, but we need the other way around
+                y: -1 * (yDistance / distance) * gravityForceMagnitude // yDistance is earth's position relative to sun's, but we need the other way around
+            }
+            var gravityForce2 = {
+                x: (xDistance / distance) * gravityForceMagnitude, // scaled force in in kilograms * million meters/day^2
+                y: (yDistance / distance) * gravityForceMagnitude // scaled force in in kilograms * million meters/day^2
+            }
+
+            earth.addForce(gravityForce1);
+            sun.addForce(gravityForce2);
+
+            document.getElementById("distance").innerHTML = "distance: " + distance;
+            document.getElementById("gravitationalMagnitude").innerHTML = "gravitationalMagnitude: " + (gravitationalConstant * earth.mass * sun.mass / Math.pow(distance, 2));
+
+            document.getElementById("earthPositionX").innerHTML = "x position: " + earth.position.x;
+            document.getElementById("earthPositionY").innerHTML = "y position: " + earth.position.y;
+            document.getElementById("earthVelocityX").innerHTML = "x velocity: " + earth.velocity.x;
+            document.getElementById("earthVelocityY").innerHTML = "y velocity: " + earth.velocity.y;
+            document.getElementById("earthMass").innerHTML = "mass: " + earth.mass;
+
+            document.getElementById("sunPositionX").innerHTML = "x position: " + sun.position.x;
+            document.getElementById("sunPositionY").innerHTML = "y position: " + sun.position.y;
+            document.getElementById("sunVelocityX").innerHTML = "x velocity: " + sun.velocity.x;
+            document.getElementById("sunVelocityY").innerHTML = "y velocity: " + sun.velocity.y;
+            document.getElementById("sunMass").innerHTML = "mass: " + sun.mass;
+        }
+
+        // Move Circles --------------------
+        function moveCircle() {
+            var mouseXPosition = event.clientX;
+            var mouseYPosition = event.clientY;
+
+            eval(selectedCircle + ".position.x = sX(mouseXPosition)");
+            eval(selectedCircle + ".position.y = sY(mouseYPosition)");
+        }
+        function switchSelectedCircle() {
+            if (selectedCircle == "earth") {
+                selectedCircle = "sun";
+            } else {
+                selectedCircle = "earth";
+            }
+            document.getElementById("select_circle").innerHTML = "Selected Circle: " + selectedCircle;
+        }
+
+        // Switch Bounds --------------------
+        function switchKeepInBounds() {
+            keepInBounds = !keepInBounds;
+            document.getElementById("keep_in_bounds").innerHTML = "Keep In Bounds: " + keepInBounds;
+        }
+
+        // Update --------------------
+        function update() {
+            simulate();
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        update();
+
+    </script>
+</body>
+</html>
